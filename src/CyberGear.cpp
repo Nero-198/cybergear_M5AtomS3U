@@ -293,27 +293,32 @@ bool CyberGear::pingMotor(uint8_t motor_id, uint8_t master_id, uint32_t timeout_
     uint16_t can_id = (CMD_GET_DEVICE_ID << 5) | motor_id;
     
     // 既存のメッセージをクリア
-    uint16_t dummy_id;
-    uint8_t dummy_data[8];
-    uint8_t dummy_len;
-    while (receiveCanFrame(dummy_id, dummy_data, dummy_len, 5)) {
+    twai_message_t dummy_msg;
+    while (twai_receive(&dummy_msg, pdMS_TO_TICKS(5)) == ESP_OK) {
         // 既存メッセージを消去
     }
     
     // Pingコマンド送信
-    sendCanFrame(can_id, data, 8);
+    twai_message_t tx_msg;
+    tx_msg.identifier = can_id;
+    tx_msg.data_length_code = 8;
+    tx_msg.flags = TWAI_MSG_FLAG_NONE;
+    
+    for (int i = 0; i < 8; i++) {
+        tx_msg.data[i] = data[i];
+    }
+    
+    twai_transmit(&tx_msg, portMAX_DELAY);
     
     // 応答を待機
     unsigned long start_time = millis();
     while (millis() - start_time < timeout_ms) {
-        uint16_t response_id;
-        uint8_t response_data[8];
-        uint8_t response_len;
+        twai_message_t rx_msg;
         
-        if (receiveCanFrame(response_id, response_data, response_len, 10)) {
+        if (twai_receive(&rx_msg, pdMS_TO_TICKS(10)) == ESP_OK) {
             // CyberGearからの応答かチェック
-            uint8_t response_motor_id = response_id & 0x1F;
-            uint8_t command = (response_id >> 5) & 0x3F;
+            uint8_t response_motor_id = rx_msg.identifier & 0x1F;
+            uint8_t command = (rx_msg.identifier >> 5) & 0x3F;
             
             if (response_motor_id == motor_id) {
                 // 正常な応答と判定
