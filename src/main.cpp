@@ -20,13 +20,14 @@ unsigned long last_control_time = 0;
 const unsigned long control_interval = 10; // 10ms間隔で制御
 
 void setup() {
-    // M5ATOM S3の初期化
-    auto cfg = M5.config();
-    AtomS3.begin(cfg);
-    
-    // シリアル通信の初期化
     Serial.begin(115200);
-    delay(1000);
+    unsigned long t0 = millis();
+    while (!Serial && millis() - t0 < 1500) { delay(10); }  // PC接続待ち (最大1.5s)
+
+    // M5 初期化（必要なら構成を調整）
+    auto cfg = M5.config();
+    // cfg.serial_baudrate = 115200;  // (M5Unifiedの版によって存在) 明示するなら
+    AtomS3.begin(cfg, false);
     
     Serial.println("=== CyberGear CA-IS3050G制御システム起動 ===");
     
