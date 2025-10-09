@@ -2,8 +2,8 @@
 #include <M5AtomS3.h>
 #include "CyberGear.h"
 
-// CyberGearオブジェクト (Motor ID: 0x7E, Master ID: 0x00)
-CyberGear motor(0x7E, 0x00);
+// CyberGearオブジェクト (Motor ID: 0x7F, Host ID: 0x7E 推奨デフォルト)
+CyberGear motor(0x7F, 0x7E);
 
 // CA-IS3050G CAN通信ピン定義（M5ATOM S3用）
 #define CAN_TX_PIN 2
@@ -18,6 +18,11 @@ float target_torque = 5.0;
 
 bool control_enabled = false; // 制御ループ ON/OFF フラグ（起動時はOFF）
 
+// デバッグ: 起動直後にCANフレームを一定時間スパム送信して観測しやすくする
+// オシロ/アナライザで拡張ID(29bit)の波形が出るか確認用
+#define DEBUG_CAN_SPAM
+#define DEBUG_CAN_SPAM_DURATION_MS 10000  // 起動後10秒間、100ms周期で送信
+
 unsigned long last_control_time = 0;
 const unsigned long control_interval = 10; // 10ms間隔で制御
 
@@ -29,7 +34,7 @@ void setup() {
     // M5 初期化（必要なら構成を調整）
     auto cfg = M5.config();
     // cfg.serial_baudrate = 115200;  // (M5Unifiedの版によって存在) 明示するなら
-    AtomS3.begin(cfg, false);
+    AtomS3.begin(cfg, true);
     
     Serial.println("=== CyberGear CA-IS3050G制御システム起動 ===");
     
@@ -67,6 +72,20 @@ void setup() {
 
 void loop() {
     AtomS3.update();
+
+#ifdef DEBUG_CAN_SPAM
+    // 起動直後の一定時間、100msごとにGet Device IDを送ってバスに波形を出す
+    static unsigned long spam_start = millis();
+    static unsigned long spam_last = 0;
+    if (millis() - spam_start < DEBUG_CAN_SPAM_DURATION_MS) {
+        if (millis() - spam_last >= 100) {
+            spam_last = millis();
+            // motor_id=0x7F, host_id=0x7E宛てに1フレーム送信（受信待ちは最短に）
+            CyberGear::pingMotor(0x7F, 0x7E, 1);
+            AtomS3.dis.drawpix(0x00ffff); // 送信可視化（シアン点灯）
+        }
+    }
+#endif
     
     // ボタンが押された時の処理
     if (AtomS3.BtnA.wasPressed()) {

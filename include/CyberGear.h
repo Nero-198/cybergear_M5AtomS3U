@@ -11,7 +11,7 @@
 #define CMD_CHANGE_CAN_ID   0x07
 #define CMD_RAM_READ        0x11
 #define CMD_RAM_WRITE       0x12
-#define CMD_MOTION_CONTROL  0x21
+#define CMD_MOTION_CONTROL  0x01
 
 // スキャン用コマンド
 #define CMD_GET_DEVICE_ID   0x00  // デバイス情報取得
@@ -19,9 +19,11 @@
 // CyberGearパラメータアドレス
 #define ADDR_MOTOR_STATUS   0x30A
 #define ADDR_MOTOR_CONTROL  0x300
-#define ADDR_LIMIT_TORQUE   0x368
-#define ADDR_LIMIT_SPEED    0x360
-#define ADDR_LIMIT_CURRENT  0x370
+// Updated parameter indices per CyberGear manual
+#define ADDR_LIMIT_SPEED    0x7017   // limit_spd [rad/s] (float)
+#define ADDR_LIMIT_CURRENT  0x7018   // limit_cur [A] (float)
+// No explicit torque limit index in doc; map to current limit for compatibility
+#define ADDR_LIMIT_TORQUE   0x7018
 
 // モーター制御モード
 #define MODE_MOTION         0x00
@@ -39,8 +41,8 @@ private:
     static uint8_t found_motor_count;
     
     // CAN通信用の内部関数
-    void sendCanFrame(uint16_t can_id, uint8_t* data, uint8_t len);
-    bool receiveCanFrame(uint16_t& can_id, uint8_t* data, uint8_t& len, uint32_t timeout_ms = 100);
+    void sendCanFrame(uint32_t can_id, const uint8_t* data, uint8_t len = 8);
+    bool receiveCanFrame(uint32_t& can_id, uint8_t* data, uint8_t& len, uint32_t timeout_ms = 100);
     
     // データ変換用の内部関数
     float uint_to_float(uint16_t x_int, float x_min, float x_max, uint8_t bits);
@@ -63,6 +65,7 @@ public:
     
     // パラメータ読み書き
     bool writeParam(uint16_t addr, float value);
+    bool writeParam8(uint16_t addr, uint8_t value);
     bool readParam(uint16_t addr, float& value);
     
     // 制限値設定
