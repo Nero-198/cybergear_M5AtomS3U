@@ -14,7 +14,9 @@ float target_position = 0.0;
 float target_velocity = 0.0;
 float kp = 30.0;  // 位置ゲイン
 float kd = 1.0;   // 速度ゲイン
-float target_torque = 0.0;
+float target_torque = 5.0;
+
+bool control_enabled = false; // 制御ループ ON/OFF フラグ（起動時はOFF）
 
 unsigned long last_control_time = 0;
 const unsigned long control_interval = 10; // 10ms間隔で制御
@@ -41,9 +43,6 @@ void setup() {
         }
     }
     
-    // 正常初期化を示すLED（緑色）
-    AtomS3.dis.drawpix(0x00ff00);
-    delay(500);
     
     // モーターの制限値設定
     motor.setTorqueLimit(5.0);   // トルク制限 5Nm
@@ -64,9 +63,6 @@ void setup() {
     Serial.println("ボタンを押して制御開始");
     Serial.println("シリアルコマンド: 'help' でコマンド一覧表示");
     Serial.println("'scan' でCyberGearの自動検出");
-    
-    // セットアップ完了を示すLED（青色）
-    AtomS3.dis.drawpix(0x0000ff);
 }
 
 void loop() {
@@ -91,7 +87,7 @@ void loop() {
     }
     
     // 定期的な制御実行
-    if (millis() - last_control_time >= control_interval) {
+    if (control_enabled && millis() - last_control_time >= control_interval) {
         last_control_time = millis();
         
         // モーション制御コマンド送信
@@ -134,13 +130,15 @@ void loop() {
         command.trim();
         
         if (command == "stop") {
-            Serial.println("モーター停止");
+            Serial.println("モーター停止+制御OFF");
+            control_enabled = false;
             motor.disable();
             AtomS3.dis.drawpix(0xff0000); // 赤色
         }
         else if (command == "start") {
-            Serial.println("モーター開始");
+            Serial.println("モーター開始+制御ON");
             motor.enable();
+            control_enabled = true;
             AtomS3.dis.drawpix(0x0000ff); // 青色
         }
         else if (command == "zero") {
@@ -198,10 +196,20 @@ void loop() {
                 Serial.println("応答なし");
             }
         }
+        else if (command == "control on") {
+            control_enabled = true;
+            Serial.println("制御ループ: ON");
+        }
+        else if (command == "control off") {
+            control_enabled = false;
+            Serial.println("制御ループ: OFF");
+        }
         else if (command == "help") {
             Serial.println("=== コマンド一覧 ===");
-            Serial.println("stop           - モーター停止");
-            Serial.println("start          - モーター開始");
+            Serial.println("stop           - モーター停止+制御OFF");
+            Serial.println("start          - モーター開始+制御ON");
+            Serial.println("control on     - 制御ループON");
+            Serial.println("control off    - 制御ループOFF");
             Serial.println("zero           - ゼロ位置設定");
             Serial.println("pos <deg>      - 目標位置設定（度）");
             Serial.println("vel <rad/s>    - 目標速度設定");
