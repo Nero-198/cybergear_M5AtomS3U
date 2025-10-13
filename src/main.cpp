@@ -12,9 +12,9 @@ CyberGear motor(0x7F, 0x7E);
 // 制御用変数
 float target_position = 0.0;
 float target_velocity = 0.0;
-float kp = 30.0;  // 位置ゲイン
+float kp = 10.0;  // 位置ゲイン
 float kd = 1.0;   // 速度ゲイン
-float target_torque = 5.0;
+float target_torque = 1.0;
 
 bool control_enabled = false; // 制御ループ ON/OFF フラグ（起動時はOFF）
 
@@ -43,7 +43,6 @@ void setup() {
         Serial.println("CA-IS3050G CAN初期化失敗");
         while (1) {
             AtomS3.update();
-            AtomS3.dis.drawpix(0xff0000); // 赤色でエラー表示
             delay(500);
         }
     }
@@ -82,7 +81,6 @@ void loop() {
             spam_last = millis();
             // motor_id=0x7F, host_id=0x7E宛てに1フレーム送信（受信待ちは最短に）
             CyberGear::pingMotor(0x7F, 0x7E, 1);
-            AtomS3.dis.drawpix(0x00ffff); // 送信可視化（シアン点灯）
         }
     }
 #endif
@@ -101,8 +99,6 @@ void loop() {
         Serial.print(target_position * 180.0 / PI);
         Serial.println(" 度");
         
-        // LED色を変更（制御中を示す）
-        AtomS3.dis.drawpix(0xffff00); // 黄色
     }
     
     // 定期的な制御実行
@@ -138,7 +134,6 @@ void loop() {
             // 目標位置に近づいたらLEDを緑に
             float position_error = abs(target_position - status.position);
             if (position_error < 0.1) { // 約5.7度以内
-                AtomS3.dis.drawpix(0x00ff00); // 緑色
             }
         }
     }
@@ -152,13 +147,11 @@ void loop() {
             Serial.println("モーター停止+制御OFF");
             control_enabled = false;
             motor.disable();
-            AtomS3.dis.drawpix(0xff0000); // 赤色
         }
         else if (command == "start") {
             Serial.println("モーター開始+制御ON");
             motor.enable();
             control_enabled = true;
-            AtomS3.dis.drawpix(0x0000ff); // 青色
         }
         else if (command == "zero") {
             Serial.println("ゼロ位置設定");
@@ -190,9 +183,12 @@ void loop() {
         }
         else if (command == "scan") {
             Serial.println("CyberGearスキャンを開始します...");
-            AtomS3.dis.drawpix(0xffffff); // 白色でスキャン中
             motor.scanForMotors(0x01, 0x7F, 100);
-            AtomS3.dis.drawpix(0x0000ff); // 青色で待機状態に戻る
+        }
+        else if (command == "torque ") {
+            target_torque = command.substring(7).toFloat();
+            Serial.print("目標トルク設定: ");
+            Serial.println(target_torque);
         }
         else if (command.startsWith("scan ")) {
             // 範囲指定スキャン: scan 0x10 0x20
@@ -201,9 +197,7 @@ void loop() {
                 uint8_t start_id = (uint8_t)strtol(command.substring(5, space_pos).c_str(), NULL, 0);
                 uint8_t end_id = (uint8_t)strtol(command.substring(space_pos + 1).c_str(), NULL, 0);
                 Serial.printf("範囲指定スキャン: 0x%02X - 0x%02X\n", start_id, end_id);
-                AtomS3.dis.drawpix(0xffffff); // 白色でスキャン中
                 motor.scanForMotors(start_id, end_id, 100);
-                AtomS3.dis.drawpix(0x0000ff); // 青色で待機状態に戻る
             }
         }
         else if (command.startsWith("ping ")) {
@@ -234,6 +228,7 @@ void loop() {
             Serial.println("vel <rad/s>    - 目標速度設定");
             Serial.println("kp <value>     - 位置ゲイン設定");
             Serial.println("kd <value>     - 速度ゲイン設定");
+            Serial.println("torque <Nm>    - 目標トルク設定");
             Serial.println("scan           - 全CyberGearスキャン");
             Serial.println("scan <s> <e>   - 範囲指定スキャン (例: scan 0x01 0x7F)");
             Serial.println("ping <id>      - 特定IDをPingテスト (例: ping 0x7E)");

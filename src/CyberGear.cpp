@@ -56,6 +56,7 @@ twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT((gpio_num_t)can_tx_
     
     return true;
 }
+}
 
 void CyberGear::sendCanFrame(uint32_t can_id, const uint8_t* data, uint8_t len) {
     twai_message_t tx_msg = {};
