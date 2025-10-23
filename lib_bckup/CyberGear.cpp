@@ -1,3 +1,10 @@
+// This duplicate implementation in lib/ has been intentionally disabled
+// to avoid ODR (multiple definition) conflicts with src/CyberGear.cpp.
+// The active and up-to-date implementation is in: src/CyberGear.cpp
+// If you want to restore this library version, remove the #if 0 guard
+// and ensure only one implementation is compiled (adjust src_filter/lib_ignore).
+
+#if 0
 #include "CyberGear.h"
 
 CyberGear::CyberGear(uint8_t motor_id, uint8_t master_id) {
