@@ -224,6 +224,63 @@ bool CyberGear::readParam(uint16_t addr, float& value) {
     return false;
 }
 
+bool CyberGear::readParam8(uint16_t addr, uint8_t& value) {
+    uint8_t data[8];
+    data[0] = addr & 0xFF;
+    data[1] = (addr >> 8) & 0xFF;
+    data[2] = 0x00;
+    data[3] = 0x00;
+    data[4] = 0x00;
+    data[5] = 0x00;
+    data[6] = 0x00;
+    data[7] = 0x00;
+
+    uint32_t can_id = make_id(CMD_RAM_READ, master_id, motor_id);
+    sendCanFrame(can_id, data, 8);
+
+    uint32_t response_id;
+    uint8_t response_data[8];
+    uint8_t response_len;
+
+    if (receiveCanFrame(response_id, response_data, response_len, 500)) {
+        if (response_len >= 5 &&
+            response_data[0] == (addr & 0xFF) &&
+            response_data[1] == ((addr >> 8) & 0xFF)) {
+            value = response_data[4];
+            return true;
+        }
+    }
+    return false;
+}
+
+bool CyberGear::setRunMode(uint8_t mode) {
+    if (mode > 3) mode = 3;
+    return writeParam8(ADDR_RUN_MODE, mode);
+}
+
+bool CyberGear::setPositionMode(float loc_ref, float limit_spd) {
+    bool ok = true;
+    ok &= writeParam8(ADDR_RUN_MODE, MODE_POSITION);
+    ok &= writeParam(ADDR_LIMIT_SPEED, limit_spd);
+    ok &= writeParam(ADDR_LOC_REF, loc_ref);
+    return ok;
+}
+
+bool CyberGear::setSpeedMode(float spd_ref, float limit_cur) {
+    bool ok = true;
+    ok &= writeParam8(ADDR_RUN_MODE, MODE_SPEED);
+    ok &= writeParam(ADDR_LIMIT_CURRENT, limit_cur);
+    ok &= writeParam(ADDR_SPD_REF, spd_ref);
+    return ok;
+}
+
+bool CyberGear::setCurrentMode(float iq_ref) {
+    bool ok = true;
+    ok &= writeParam8(ADDR_RUN_MODE, MODE_CURRENT);
+    ok &= writeParam(ADDR_IQ_REF, iq_ref);
+    return ok;
+}
+ 
 bool CyberGear::setTorqueLimit(float torque_limit) {
     // トルク制限は電流制限にマップ（仕様によりTorque indexが未定義の場合）
     return writeParam(ADDR_LIMIT_TORQUE, torque_limit);

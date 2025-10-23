@@ -25,6 +25,12 @@
 // No explicit torque limit index in doc; map to current limit for compatibility
 #define ADDR_LIMIT_TORQUE   0x7018
 
+// Run mode and reference indices
+#define ADDR_RUN_MODE       0x7005   // run_mode (u8) 0:Operation 1:Position 2:Speed 3:Current
+#define ADDR_IQ_REF         0x7006   // iq_ref (float) [A]
+#define ADDR_SPD_REF        0x700A   // spd_ref (float) [rad/s]
+#define ADDR_LOC_REF        0x7016   // loc_ref (float) [rad]
+
 // モーター制御モード
 #define MODE_MOTION         0x00
 #define MODE_POSITION       0x01
@@ -59,14 +65,28 @@ public:
     bool enable();
     bool disable();
     bool setZeroPosition();
+
+    typedef enum {
+        CONTROL_MOTION = 0,
+        CONTROL_POSITION = 1,
+        CONTROL_SPEED = 2,
+        CONTROL_CURRENT = 3
+    } ControlMode;
     
     // モーション制御
     bool setMotionControl(float position, float velocity, float kp, float kd, float torque);
+
+    // ランモード/各モード設定
+    bool setRunMode(uint8_t mode);                 // 0:Operation 1:Position 2:Speed 3:Current
+    bool setPositionMode(float loc_ref, float limit_spd);
+    bool setSpeedMode(float spd_ref, float limit_cur);
+    bool setCurrentMode(float iq_ref);
     
     // パラメータ読み書き
     bool writeParam(uint16_t addr, float value);
     bool writeParam8(uint16_t addr, uint8_t value);
     bool readParam(uint16_t addr, float& value);
+    bool readParam8(uint16_t addr, uint8_t& value);
     
     // 制限値設定
     bool setTorqueLimit(float torque_limit);
