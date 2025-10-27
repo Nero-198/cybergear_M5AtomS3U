@@ -64,11 +64,15 @@ void setup() {
     delay(500);
     
     Serial.println("セットアップ完了");
-    Serial.println("ボタンを押して制御開始");
-    Serial.println("シリアルコマンド: 'help' でコマンド一覧表示");
-    Serial.println("'scan' でCyberGearの自動検出");
 }
 
+void loop() {
+    AtomS3.update();
+
+    
+}
+
+/*
 void loop() {
     AtomS3.update();
 
@@ -322,3 +326,5 @@ void loop() {
     
     delay(1);
 }
+
+*/
