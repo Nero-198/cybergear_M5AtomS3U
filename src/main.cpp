@@ -9,6 +9,7 @@ CyberGear motor(0x7F, 0x7E);
 #define CAN_TX_PIN 2
 #define CAN_RX_PIN 1
 
+
 // 制御用変数
 float target_position = 0.0;
 float target_velocity = 0.0;
@@ -26,6 +27,9 @@ bool control_enabled = false; // 制御ループ ON/OFF フラグ（起動時は
 unsigned long last_control_time = 0;
 const unsigned long control_interval = 10; // 10ms間隔で制御
 
+
+static inline float adc_to_pm100_fastf(uint16_t raw);
+
 void setup() {
     Serial.begin(115200);
     unsigned long t0 = millis();
@@ -35,6 +39,7 @@ void setup() {
     auto cfg = M5.config();
     // cfg.serial_baudrate = 115200;  // (M5Unifiedの版によって存在) 明示するなら
     AtomS3.begin(cfg, true);
+    pinMode(14, INPUT); //ADC3
     
     Serial.println("=== CyberGear CA-IS3050G制御システム起動 ===");
     
@@ -64,11 +69,65 @@ void setup() {
     delay(500);
     
     Serial.println("セットアップ完了");
-    Serial.println("ボタンを押して制御開始");
-    Serial.println("シリアルコマンド: 'help' でコマンド一覧表示");
-    Serial.println("'scan' でCyberGearの自動検出");
 }
 
+float limit_spd = 1.0f; // 引数がなければデフォルト1rad/s
+
+void loop() {
+    AtomS3.update();
+    uint16_t motor_angle = analogRead(14); //ADCの解像度は12ビット(0-4095)
+    float pos = adc_to_pm100_fastf(motor_angle) * (PI / 180.0f); // -100.0 to +100.0 -> rad
+    //Serial.println(adc_to_pm100_fastf(motor_angle));
+
+    // 定期的な制御実行
+    if (control_enabled && millis() - last_control_time >= control_interval) {
+            last_control_time = millis();
+            if (motor.setPositionMode(pos, limit_spd)) {
+                Serial.printf("RunMode: Position loc=%.3f deg, limit_spd=%.3f rad/s\n", pos, limit_spd);
+            } else {
+                Serial.println("位置モード設定失敗");
+            }
+        }
+        //Serial.println((motor_angle * 360.0f / 4096.0f) * PI / 180.0f);
+
+    // シリアルコマンド処理
+    if (Serial.available()) {
+        String command = Serial.readStringUntil('\n'); // 改行まで読み取り
+        command.trim(); // 前後の空白削除
+        
+        if (command == "stop") {
+            Serial.println("モーター停止+制御OFF");
+            control_enabled = false;
+            motor.disable();
+        }
+        else if (command == "start") {
+            Serial.println("モーター開始+制御ON");
+            motor.enable();
+            control_enabled = true;
+        }
+        else if (command == "zero") {
+            Serial.println("ゼロ位置設定");
+            control_enabled = false; // 制御OFF
+            motor.disable();
+            motor.setZeroPosition();
+        }else if(command.startsWith("spd ")) {
+            limit_spd = command.substring(4).toFloat();
+            Serial.print("速度制限設定: ");
+            Serial.print(limit_spd);
+            Serial.println(" rad/s");
+        }
+    }
+delay(1);
+}
+
+static inline float adc_to_pm100_fastf(uint16_t raw) {
+    int32_t s = (int32_t)raw - 2048;            // -2048..+2047
+    float v = (float)s * (100.0f / 2047.0f);    // 係数は定数（割り算なし）
+    if (v > 100.0f)  v = 100.0f;                // 端での丸め誤差を抑える
+    if (v < -100.0f) v = -100.0f;
+    return v;                                    // -100.0..+100.0
+}
+/*
 void loop() {
     AtomS3.update();
 
@@ -181,11 +240,89 @@ void loop() {
             Serial.print("速度ゲイン設定: ");
             Serial.println(kd);
         }
+        else if (command.startsWith("mode ")) {
+            String arg = command.substring(5);
+            arg.trim();
+            arg.toLowerCase();
+            if (arg == "op" || arg.startsWith("op")) {
+                if (motor.setRunMode(MODE_MOTION)) {
+                    control_enabled = true; // MIT制御を使うので制御ループON
+                    Serial.println("RunMode: Operation (MIT) に切替");
+                } else {
+                    Serial.println("RunMode切替(Operation)失敗");
+                }
+            } else if (arg.startsWith("pos")) {
+                // 使用法: mode pos <deg> [limit_spd]
+                String rest = command.substring(9); // "mode pos "の後ろ
+                rest.trim();
+                float limit_spd = 5.0f;
+                float deg = 0.0f;
+                int sp = rest.indexOf(' ');
+                if (sp >= 0) {
+                    deg = rest.substring(0, sp).toFloat();
+                    limit_spd = rest.substring(sp + 1).toFloat();
+                } else {
+                    deg = rest.toFloat();
+                }
+                float loc_ref = deg * PI / 180.0f;
+                if (motor.setPositionMode(loc_ref, limit_spd)) {
+                    control_enabled = false; // 位置モードではMIT制御を停止
+                    Serial.printf("RunMode: Position loc=%.3f deg, limit_spd=%.3f rad/s\n", deg, limit_spd);
+                } else {
+                    Serial.println("位置モード設定失敗");
+                }
+            } else if (arg.startsWith("spd")) {
+                // 使用法: mode spd <rad/s> [limit_cur]
+                String rest = command.substring(9); // "mode spd "の後ろ
+                rest.trim();
+                float limit_cur = 2.0f;
+                float spd = 0.0f;
+                int sp = rest.indexOf(' ');
+                if (sp >= 0) {
+                    spd = rest.substring(0, sp).toFloat();
+                    limit_cur = rest.substring(sp + 1).toFloat();
+                } else {
+                    spd = rest.toFloat();
+                }
+                if (motor.setSpeedMode(spd, limit_cur)) {
+                    control_enabled = false; // 速度モードではMIT制御を停止
+                    Serial.printf("RunMode: Speed spd=%.3f rad/s, limit_cur=%.3f A\n", spd, limit_cur);
+                } else {
+                    Serial.println("速度モード設定失敗");
+                }
+            } else if (arg.startsWith("cur")) {
+                // 使用法: mode cur <A>
+                String rest = command.substring(9); // "mode cur "の後ろ
+                rest.trim();
+                float iq = rest.toFloat();
+                if (motor.setCurrentMode(iq)) {
+                    control_enabled = false; // 電流モードではMIT制御を停止
+                    Serial.printf("RunMode: Current iq_ref=%.3f A\n", iq);
+                } else {
+                    Serial.println("電流モード設定失敗");
+                }
+            } else {
+                Serial.println("使用法: mode op | mode pos <deg> [limit_spd] | mode spd <rad/s> [limit_cur] | mode cur <A>");
+            }
+        }
+        else if (command == "mode?") {
+            uint8_t rm = 0xFF;
+            if (motor.readParam8(ADDR_RUN_MODE, rm)) {
+                const char* name = "Unknown";
+                if (rm == MODE_MOTION)      name = "Operation";
+                else if (rm == MODE_POSITION) name = "Position";
+                else if (rm == MODE_SPEED)    name = "Speed";
+                else if (rm == MODE_CURRENT)  name = "Current";
+                Serial.printf("run_mode = %u (%s)\n", rm, name);
+            } else {
+                Serial.println("run_mode読み取り失敗");
+            }
+        }
         else if (command == "scan") {
             Serial.println("CyberGearスキャンを開始します...");
             motor.scanForMotors(0x01, 0x7F, 100);
         }
-        else if (command == "torque ") {
+        else if (command.startsWith("torque ")) {
             target_torque = command.substring(7).toFloat();
             Serial.print("目標トルク設定: ");
             Serial.println(target_torque);
@@ -219,23 +356,30 @@ void loop() {
         }
         else if (command == "help") {
             Serial.println("=== コマンド一覧 ===");
-            Serial.println("stop           - モーター停止+制御OFF");
-            Serial.println("start          - モーター開始+制御ON");
-            Serial.println("control on     - 制御ループON");
-            Serial.println("control off    - 制御ループOFF");
-            Serial.println("zero           - ゼロ位置設定");
-            Serial.println("pos <deg>      - 目標位置設定（度）");
-            Serial.println("vel <rad/s>    - 目標速度設定");
-            Serial.println("kp <value>     - 位置ゲイン設定");
-            Serial.println("kd <value>     - 速度ゲイン設定");
-            Serial.println("torque <Nm>    - 目標トルク設定");
-            Serial.println("scan           - 全CyberGearスキャン");
-            Serial.println("scan <s> <e>   - 範囲指定スキャン (例: scan 0x01 0x7F)");
-            Serial.println("ping <id>      - 特定IDをPingテスト (例: ping 0x7E)");
-            Serial.println("help           - このヘルプ表示");
+            Serial.println("stop             - モーター停止+制御OFF");
+            Serial.println("start            - モーター開始+制御ON");
+            Serial.println("control on       - 制御ループON（MIT制御送信）");
+            Serial.println("control off      - 制御ループOFF");
+            Serial.println("zero             - ゼロ位置設定");
+            Serial.println("pos <deg>        - MIT制御: 目標位置設定（度）");
+            Serial.println("vel <rad/s>      - MIT制御: 目標速度設定");
+            Serial.println("kp <value>       - MIT制御: 位置ゲイン設定");
+            Serial.println("kd <value>       - MIT制御: 速度ゲイン設定");
+            Serial.println("torque <Nm>      - MIT制御: 目標トルク設定（現行実装では未送信項目）");
+            Serial.println("mode op          - RunMode: Operation(MIT) に切替（制御ループON推奨）");
+            Serial.println("mode pos <deg> [limit_spd] - RunMode: Position に切替してloc_ref/limit_spdを設定");
+            Serial.println("mode spd <rad/s> [limit_cur] - RunMode: Speed に切替してspd_ref/limit_curを設定");
+            Serial.println("mode cur <A>     - RunMode: Current に切替してiq_refを設定");
+            Serial.println("mode?            - 現在のrun_modeを表示");
+            Serial.println("scan             - 全CyberGearスキャン");
+            Serial.println("scan <s> <e>     - 範囲指定スキャン (例: scan 0x01 0x7F)");
+            Serial.println("ping <id>        - 特定IDをPingテスト (例: ping 0x7E)");
+            Serial.println("help             - このヘルプ表示");
             Serial.println("==================");
         }
     }
     
     delay(1);
 }
+
+*/
