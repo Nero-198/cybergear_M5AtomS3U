@@ -9,6 +9,7 @@ CyberGear motor(0x7F, 0x7E);
 #define CAN_TX_PIN 2
 #define CAN_RX_PIN 1
 
+
 // 制御用変数
 float target_position = 0.0;
 float target_velocity = 0.0;
@@ -26,6 +27,9 @@ bool control_enabled = false; // 制御ループ ON/OFF フラグ（起動時は
 unsigned long last_control_time = 0;
 const unsigned long control_interval = 10; // 10ms間隔で制御
 
+
+static inline float adc_to_pm100_fastf(uint16_t raw);
+
 void setup() {
     Serial.begin(115200);
     unsigned long t0 = millis();
@@ -35,6 +39,7 @@ void setup() {
     auto cfg = M5.config();
     // cfg.serial_baudrate = 115200;  // (M5Unifiedの版によって存在) 明示するなら
     AtomS3.begin(cfg, true);
+    pinMode(14, INPUT); //ADC3
     
     Serial.println("=== CyberGear CA-IS3050G制御システム起動 ===");
     
@@ -64,11 +69,65 @@ void setup() {
     delay(500);
     
     Serial.println("セットアップ完了");
-    Serial.println("ボタンを押して制御開始");
-    Serial.println("シリアルコマンド: 'help' でコマンド一覧表示");
-    Serial.println("'scan' でCyberGearの自動検出");
 }
 
+float limit_spd = 1.0f; // 引数がなければデフォルト1rad/s
+
+void loop() {
+    AtomS3.update();
+    uint16_t motor_angle = analogRead(14); //ADCの解像度は12ビット(0-4095)
+    float pos = adc_to_pm100_fastf(motor_angle) * (PI / 180.0f); // -100.0 to +100.0 -> rad
+    //Serial.println(adc_to_pm100_fastf(motor_angle));
+
+    // 定期的な制御実行
+    if (control_enabled && millis() - last_control_time >= control_interval) {
+            last_control_time = millis();
+            if (motor.setPositionMode(pos, limit_spd)) {
+                Serial.printf("RunMode: Position loc=%.3f deg, limit_spd=%.3f rad/s\n", pos, limit_spd);
+            } else {
+                Serial.println("位置モード設定失敗");
+            }
+        }
+        //Serial.println((motor_angle * 360.0f / 4096.0f) * PI / 180.0f);
+
+    // シリアルコマンド処理
+    if (Serial.available()) {
+        String command = Serial.readStringUntil('\n'); // 改行まで読み取り
+        command.trim(); // 前後の空白削除
+        
+        if (command == "stop") {
+            Serial.println("モーター停止+制御OFF");
+            control_enabled = false;
+            motor.disable();
+        }
+        else if (command == "start") {
+            Serial.println("モーター開始+制御ON");
+            motor.enable();
+            control_enabled = true;
+        }
+        else if (command == "zero") {
+            Serial.println("ゼロ位置設定");
+            control_enabled = false; // 制御OFF
+            motor.disable();
+            motor.setZeroPosition();
+        }else if(command.startsWith("spd ")) {
+            limit_spd = command.substring(4).toFloat();
+            Serial.print("速度制限設定: ");
+            Serial.print(limit_spd);
+            Serial.println(" rad/s");
+        }
+    }
+delay(1);
+}
+
+static inline float adc_to_pm100_fastf(uint16_t raw) {
+    int32_t s = (int32_t)raw - 2048;            // -2048..+2047
+    float v = (float)s * (100.0f / 2047.0f);    // 係数は定数（割り算なし）
+    if (v > 100.0f)  v = 100.0f;                // 端での丸め誤差を抑える
+    if (v < -100.0f) v = -100.0f;
+    return v;                                    // -100.0..+100.0
+}
+/*
 void loop() {
     AtomS3.update();
 
@@ -322,3 +381,5 @@ void loop() {
     
     delay(1);
 }
+
+*/
